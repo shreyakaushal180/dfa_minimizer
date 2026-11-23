@@ -21,6 +21,8 @@ export function validateDFA(dfa: DFA): ValidationResult {
   // 1. States validation
   if (!dfa.states || dfa.states.length === 0) {
     errors.push("DFA must have at least one state.");
+  } else if (dfa.states.length > 30) {
+    errors.push(`Maximum 30 states supported for visualization and analysis (entered ${dfa.states.length}).`);
   } else {
     const uniqueStates = new Set(dfa.states);
     if (uniqueStates.size !== dfa.states.length) {
@@ -588,5 +590,33 @@ export const PRESET_DFAS: PresetTestCase[] = [
         q5: { "a": "q5", "b": "q4" }
       }
     }
+  },
+  {
+    id: "30-state-benchmark",
+    name: "30-State Large Benchmark (q0 to q29)",
+    description: "Full 30-state automaton with paired equivalent tracks minimizing from 30 states to 15 states.",
+    expectedStateCount: 15,
+    sampleStrings: ["01", "101", "0011", "1100", "0101"],
+    dfa: (() => {
+      const states = Array.from({ length: 30 }, (_, i) => `q${i}`);
+      const transitions: Record<string, Record<string, string>> = {};
+      // Dual-track modulo 15 structure: q[i] and q[i+15] behave equivalently
+      for (let i = 0; i < 30; i++) {
+        const next0 = ((i % 15) + 1) % 15;
+        const next1 = ((i % 15) + 2) % 15;
+        // Alternate landing on track 0 or track 1 to exercise partition refinement
+        transitions[`q${i}`] = {
+          "0": `q${next0 + (i < 15 ? 0 : 15)}`,
+          "1": `q${next1 + (i < 15 ? 15 : 0)}`,
+        };
+      }
+      return {
+        states,
+        alphabet: ["0", "1"],
+        startState: "q0",
+        finalStates: ["q3", "q7", "q11", "q18", "q22", "q26"],
+        transitions,
+      };
+    })()
   }
 ];

@@ -4,28 +4,33 @@ import { validateDFA, minimizeDFA, PRESET_DFAS } from './utils/dfaUtils';
 import { Header } from './components/Header';
 import { DFAForm } from './components/DFAForm';
 import { MainStage } from './components/MainStage';
+import { SideBySideSimulator } from './components/SideBySideSimulator';
 import { BackgroundDecorations } from './components/BackgroundDecorations';
 import { ToastProvider, useToast } from './components/Toast';
 import { LearnMoreModal } from './components/LearnMoreModal';
 import { PresetsModal } from './components/PresetsModal';
 import { TransitionEditorModal } from './components/TransitionEditorModal';
 import { StringSimulatorModal } from './components/StringSimulatorModal';
+import { Layers, Terminal } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { showToast } = useToast();
 
-  // Default to standard project example DFA (matching the reference image: A,B,C,D,E with D,E final)
+  // Default to standard project example DFA (A,B,C,D,E with D,E final)
   const defaultPreset = PRESET_DFAS[0];
   const [dfa, setDfa] = useState<DFA>(defaultPreset.dfa);
   const [currentPresetId, setCurrentPresetId] = useState<string>(defaultPreset.id);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [sampleStrings, setSampleStrings] = useState<string[]>(defaultPreset.sampleStrings);
 
+  // Active view tab: 'minimizer' or 'simulator'
+  const [activeTab, setActiveTab] = useState<'minimizer' | 'simulator'>('minimizer');
+
   // Modals state
   const [isLearnMoreOpen, setIsLearnMoreOpen] = useState(false);
   const [isPresetsOpen, setIsPresetsOpen] = useState(false);
   const [isTransitionEditorOpen, setIsTransitionEditorOpen] = useState(false);
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+  const [isSimulatorModalOpen, setIsSimulatorModalOpen] = useState(false);
 
   // Live validation
   const validation = useMemo(() => validateDFA(dfa), [dfa]);
@@ -72,14 +77,14 @@ const AppContent: React.FC = () => {
     }
 
     if (minimizationResult) {
-      // Advance to step 1 (or next step)
       setCurrentStepIndex(1);
+      setActiveTab('minimizer');
       const reducedCount = minimizationResult.minimizedDFA.states.length;
       const originalCount = minimizationResult.originalDFA.states.length;
       const reduction = Math.round((1 - reducedCount / originalCount) * 100);
 
       showToast({
-        title: '✨ Minimization Begun!',
+        title: 'Minimization Begun',
         description: `Refining partitions: ${originalCount} states can reduce to ${reducedCount} (${reduction}% reduction)`,
         type: 'magic',
       });
@@ -99,33 +104,95 @@ const AppContent: React.FC = () => {
       />
 
       {/* Main Container Area */}
-      <main className="relative z-10 flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Side: "Your DFA" Parchment Input Card (approx 3.8 / 12 cols) */}
-          <div className="lg:col-span-4 xl:col-span-3">
-            <DFAForm
-              dfa={dfa}
-              validation={validation}
-              onChange={(updated) => {
-                setDfa(updated);
-                setCurrentPresetId('custom');
-                setCurrentStepIndex(0);
-              }}
-              onOpenTransitionEditor={() => setIsTransitionEditorOpen(true)}
-              onMinimizeClick={handleMinimizeClick}
-            />
+      <main className="relative z-10 flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4">
+        {/* Navigation Tabs Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-950/20 pb-2.5">
+          <div className="flex bg-[#231a30]/80 p-1 rounded-xl border border-[#4a395c]/60 shadow-md">
+            <button
+              onClick={() => setActiveTab('minimizer')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                activeTab === 'minimizer'
+                  ? 'bg-amber-400 text-stone-950 shadow'
+                  : 'text-[#d6c4a8] hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>1. DFA Minimizer Workflow</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('simulator')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+                activeTab === 'simulator'
+                  ? 'bg-amber-400 text-stone-950 shadow'
+                  : 'text-[#d6c4a8] hover:text-white'
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              <span>2. Side-by-Side String Simulator</span>
+            </button>
           </div>
 
-          {/* Right Side: Main Stage (approx 8.2 / 12 cols) */}
-          <div className="lg:col-span-8 xl:col-span-9">
-            <MainStage
-              minimizationResult={minimizationResult}
-              currentStepIndex={currentStepIndex}
-              onStepChange={setCurrentStepIndex}
-              onOpenSimulator={() => setIsSimulatorOpen(true)}
-            />
+          <div className="text-xs text-[#c5b59f] font-mono">
+            Preset:{' '}
+            <span className="text-amber-300 font-bold">
+              {PRESET_DFAS.find((p) => p.id === currentPresetId)?.name || 'Custom Automaton'}
+            </span>
           </div>
         </div>
+
+        {/* Content Body */}
+        {activeTab === 'minimizer' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Side: "Your DFA" Parchment Input Card */}
+            <div className="lg:col-span-4 xl:col-span-3">
+              <DFAForm
+                dfa={dfa}
+                validation={validation}
+                onChange={(updated) => {
+                  setDfa(updated);
+                  setCurrentPresetId('custom');
+                  setCurrentStepIndex(0);
+                }}
+                onOpenTransitionEditor={() => setIsTransitionEditorOpen(true)}
+                onMinimizeClick={handleMinimizeClick}
+              />
+            </div>
+
+            {/* Right Side: Main Stage */}
+            <div className="lg:col-span-8 xl:col-span-9">
+              <MainStage
+                minimizationResult={minimizationResult}
+                currentStepIndex={currentStepIndex}
+                onStepChange={setCurrentStepIndex}
+                onOpenSimulator={() => setActiveTab('simulator')}
+              />
+            </div>
+          </div>
+        ) : (
+          /* Side-by-Side Simulator Tab */
+          <div className="space-y-4">
+            {minimizationResult ? (
+              <SideBySideSimulator
+                originalDFA={minimizationResult.originalDFA}
+                minimizedDFA={minimizationResult.minimizedDFA}
+                initialStrings={sampleStrings}
+              />
+            ) : (
+              <div className="parchment-card p-12 text-center text-stone-600">
+                <p className="font-serif font-bold text-base text-stone-800">
+                  Please configure a valid DFA in the Minimizer tab first.
+                </p>
+                <button
+                  onClick={() => setActiveTab('minimizer')}
+                  className="mt-3 px-4 py-2 text-xs font-semibold bg-[#252d4a] text-white rounded-lg"
+                >
+                  Return to Minimizer
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Cozy Footer */}
@@ -171,8 +238,8 @@ const AppContent: React.FC = () => {
 
       {minimizationResult && (
         <StringSimulatorModal
-          isOpen={isSimulatorOpen}
-          onClose={() => setIsSimulatorOpen(false)}
+          isOpen={isSimulatorModalOpen}
+          onClose={() => setIsSimulatorModalOpen(false)}
           originalDFA={minimizationResult.originalDFA}
           minimizedDFA={minimizationResult.minimizedDFA}
           initialStrings={sampleStrings}
