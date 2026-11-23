@@ -1,39 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { DFA, ValidationResult, PresetTestCase } from '../types/dfa';
-import { PRESET_DFAS } from '../utils/dfaUtils';
-import { AlertCircle, AlertTriangle, CheckCircle2, Layers, Plus } from 'lucide-react';
+import { DFA, ValidationResult } from '../types/dfa';
+import { Pencil, Sparkles, Lightbulb, Table, ChevronDown, Check, AlertCircle } from 'lucide-react';
 
 interface DFAFormProps {
   dfa: DFA;
   validation: ValidationResult;
   onChange: (updatedDFA: DFA) => void;
-  onSelectPreset: (preset: PresetTestCase) => void;
+  onOpenTransitionEditor: () => void;
+  onMinimizeClick: () => void;
 }
 
 export const DFAForm: React.FC<DFAFormProps> = ({
   dfa,
   validation,
   onChange,
-  onSelectPreset,
+  onOpenTransitionEditor,
+  onMinimizeClick,
 }) => {
   const [statesInput, setStatesInput] = useState(dfa.states.join(', '));
-  const [alphabetInput, setAlphabetInput] = useState(dfa.alphabet.join(', '));
+  const [isFinalsDropdownOpen, setIsFinalsDropdownOpen] = useState(false);
 
-  // Sync internal text inputs when parent dfa changes (e.g. on preset load)
+  // Sync internal text input when parent DFA changes
   useEffect(() => {
     setStatesInput(dfa.states.join(', '));
-    setAlphabetInput(dfa.alphabet.join(', '));
-  }, [dfa]);
+  }, [dfa.states]);
 
   // Handle States text input change
   const handleStatesChange = (val: string) => {
     setStatesInput(val);
     const parsedStates = val
       .split(/[, space\s]+/)
-      .map(s => s.trim())
+      .map((s) => s.trim())
       .filter(Boolean);
 
-    // Filter out duplicates preserving order
     const newStates = Array.from(new Set(parsedStates));
 
     let newStart = dfa.startState;
@@ -41,14 +40,12 @@ export const DFAForm: React.FC<DFAFormProps> = ({
       newStart = newStates[0];
     }
 
-    const newFinals = dfa.finalStates.filter(s => newStates.includes(s));
+    const newFinals = dfa.finalStates.filter((s) => newStates.includes(s));
 
-    // Rebuild transitions structure safely
     const newTransitions: Record<string, Record<string, string>> = {};
-    newStates.forEach(st => {
+    newStates.forEach((st) => {
       newTransitions[st] = {};
-      dfa.alphabet.forEach(sym => {
-        // Keep existing target if valid, else default to first state
+      dfa.alphabet.forEach((sym) => {
         const existing = dfa.transitions[st]?.[sym];
         newTransitions[st][sym] = newStates.includes(existing) ? existing : (newStates[0] || '');
       });
@@ -63,79 +60,11 @@ export const DFAForm: React.FC<DFAFormProps> = ({
     });
   };
 
-  const addState = () => {
-    let newState: string | undefined;
-
-    if (dfa.states.every(state => /^[A-Z]$/.test(state))) {
-      newState = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(state => !dfa.states.includes(state));
-    } else {
-      const numberedStates = dfa.states.map(state => state.match(/^(.*?)(\d+)$/));
-      const prefix = numberedStates[0]?.[1];
-      if (prefix !== undefined && numberedStates.every(match => match && match[1] === prefix)) {
-        const nextNumber = Math.max(...numberedStates.map(match => Number(match?.[2] ?? -1))) + 1;
-        newState = `${prefix}${nextNumber}`;
-      }
-    }
-
-    if (!newState) {
-      let suffix = 1;
-      newState = `State${suffix}`;
-      while (dfa.states.includes(newState)) {
-        suffix += 1;
-        newState = `State${suffix}`;
-      }
-    }
-
-    handleStatesChange([...dfa.states, newState].join(', '));
-  };
-
-  // Handle Alphabet text input change
-  const handleAlphabetChange = (val: string) => {
-    setAlphabetInput(val);
-    const parsedSyms = val
-      .split(/[, space\s]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-
-    const newAlphabet = Array.from(new Set(parsedSyms));
-
-    const newTransitions: Record<string, Record<string, string>> = {};
-    dfa.states.forEach(st => {
-      newTransitions[st] = {};
-      newAlphabet.forEach(sym => {
-        const existing = dfa.transitions[st]?.[sym];
-        newTransitions[st][sym] = dfa.states.includes(existing) ? existing : (dfa.states[0] || '');
-      });
-    });
-
-    onChange({
-      ...dfa,
-      alphabet: newAlphabet,
-      transitions: newTransitions,
-    });
-  };
-
-  // Handle Transition change
-  const handleTransitionChange = (fromState: string, symbol: string, toState: string) => {
-    const updatedTransitions = {
-      ...dfa.transitions,
-      [fromState]: {
-        ...(dfa.transitions[fromState] || {}),
-        [symbol]: toState,
-      },
-    };
-
-    onChange({
-      ...dfa,
-      transitions: updatedTransitions,
-    });
-  };
-
-  // Handle Final State toggle
+  // Toggle final state in/out
   const toggleFinalState = (state: string) => {
-    const isFinal = dfa.finalStates.includes(state);
-    const updatedFinals = isFinal
-      ? dfa.finalStates.filter(s => s !== state)
+    const isCurrentlyFinal = dfa.finalStates.includes(state);
+    const updatedFinals = isCurrentlyFinal
+      ? dfa.finalStates.filter((s) => s !== state)
       : [...dfa.finalStates, state];
 
     onChange({
@@ -145,226 +74,210 @@ export const DFAForm: React.FC<DFAFormProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-6">
-      {/* Top Header & Presets */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <Layers className="w-5 h-5 text-indigo-400" />
-            DFA Definition & Input
-          </h2>
-          <p className="text-xs text-slate-400">Configure states, alphabet, start/final states, and transitions dynamically.</p>
-        </div>
+    <div className="relative w-full rounded-2xl bg-[#fdf8ed] border-2 border-[#dfcca8] shadow-2xl p-5 sm:p-6 text-[#3b2b1f] flex flex-col justify-between">
+      {/* Hand-drawn Antique Open Book Illustration in top right */}
+      <div className="absolute top-3.5 right-4 pointer-events-none opacity-85 select-none">
+        <svg className="w-16 h-12 drop-shadow-sm" viewBox="0 0 80 50" fill="none">
+          {/* Book Leather Cover Backing */}
+          <path d="M 6 36 Q 22 34 39 37 L 39 42 Q 22 39 6 41 Z" fill="#6d4c2b" stroke="#4a3118" strokeWidth="1" />
+          <path d="M 74 36 Q 58 34 41 37 L 41 42 Q 58 39 74 41 Z" fill="#6d4c2b" stroke="#4a3118" strokeWidth="1" />
+          
+          {/* Thick Paper Edge Layers */}
+          <path d="M 8 34 Q 23 32 39 35 L 39 39 Q 23 36 8 38 Z" fill="#ebd7b5" />
+          <path d="M 72 34 Q 57 32 41 35 L 41 39 Q 57 36 72 38 Z" fill="#ebd7b5" />
 
-        {/* Preset Selector */}
-        <div className="flex items-center space-x-2">
-          <label className="text-xs text-slate-400 whitespace-nowrap">Load Preset:</label>
-          <select
-            onChange={(e) => {
-              const preset = PRESET_DFAS.find(p => p.id === e.target.value);
-              if (preset) onSelectPreset(preset);
-            }}
-            defaultValue="example-prompt"
-            className="bg-slate-800 text-slate-200 text-xs rounded-lg border border-slate-700 px-3 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-          >
-            {PRESET_DFAS.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
+          {/* Left Open Page with Curvature */}
+          <path
+            d="M 10 12 Q 24 16 39 18 L 39 35 Q 23 33 10 29 Z"
+            fill="#fcf8ec"
+            stroke="#c8ab80"
+            strokeWidth="1.2"
+          />
+          {/* Right Open Page with Curvature */}
+          <path
+            d="M 70 12 Q 56 16 41 18 L 41 35 Q 57 33 70 29 Z"
+            fill="#fdfbf1"
+            stroke="#c8ab80"
+            strokeWidth="1.2"
+          />
+
+          {/* Top Page Curl Leaves */}
+          <path d="M 12 14 Q 25 17 39 19" stroke="#dfcca8" strokeWidth="0.8" fill="none" />
+          <path d="M 68 14 Q 55 17 41 19" stroke="#dfcca8" strokeWidth="0.8" fill="none" />
+
+          {/* Spine Center Groove */}
+          <path d="M 39 18 Q 40 27 40 37" stroke="#8d6840" strokeWidth="1.5" />
+          
+          {/* Crimson Bookmark Ribbon dangling out */}
+          <path d="M 40 26 Q 43 36 38 45 L 35 44 L 38 41 Z" fill="#b91c1c" opacity="0.9" />
+
+          {/* Subtle Inked Text Lines */}
+          <line x1="16" y1="18" x2="33" y2="21" stroke="#a4845e" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+          <line x1="16" y1="22" x2="31" y2="25" stroke="#a4845e" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+          <line x1="16" y1="26" x2="28" y2="28" stroke="#a4845e" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
+
+          <line x1="47" y1="21" x2="64" y2="18" stroke="#a4845e" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+          <line x1="49" y1="25" x2="64" y2="22" stroke="#a4845e" strokeWidth="1" strokeLinecap="round" opacity="0.6" />
+          <line x1="52" y1="28" x2="64" y2="26" stroke="#a4845e" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
+        </svg>
       </div>
 
-      {/* Validation Status Indicator */}
-      {validation.isValid ? (
-        <div className="flex items-center space-x-2 bg-emerald-950/40 border border-emerald-800/60 text-emerald-400 text-xs px-3.5 py-2 rounded-lg">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>DFA is valid and ready for minimization analysis.</span>
-        </div>
-      ) : (
-        <div className="bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs p-3 rounded-lg space-y-1">
-          <div className="flex items-center space-x-2 font-semibold text-rose-400">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>Invalid DFA Definition:</span>
+      <div className="space-y-4">
+        {/* Card Header: Pencil icon + "Your DFA" */}
+        <div className="flex items-center gap-2.5 pb-2 border-b border-[#e6d5bd]">
+          <div className="p-1.5 rounded-lg bg-amber-100/80 text-amber-900 shadow-sm transition-transform hover:scale-110">
+            <Pencil className="w-4 h-4" />
           </div>
-          <ul className="list-disc list-inside space-y-0.5 text-slate-300 pl-1">
-            {validation.errors.map((err, idx) => (
-              <li key={idx}>{err}</li>
-            ))}
-          </ul>
+          <h2 className="font-serif text-lg sm:text-xl font-bold tracking-tight text-[#2d1e13]">
+            Your DFA
+          </h2>
         </div>
-      )}
 
-      {validation.warnings.length > 0 && (
-        <div className="bg-amber-950/40 border border-amber-800/60 text-amber-300 text-xs p-3 rounded-lg space-y-1">
-          <div className="flex items-center space-x-2 font-semibold text-amber-400">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Notice:</span>
+        {/* Validation Error/Warning Banner if any */}
+        {!validation.isValid && (
+          <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2 animate-pop-in">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5 animate-bounce" />
+            <div>
+              <p className="font-semibold">Automaton Notice:</p>
+              <ul className="list-disc list-inside mt-0.5 space-y-0.5 opacity-90">
+                {validation.errors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </ul>
+            </div>
           </div>
-          <ul className="list-disc list-inside space-y-0.5 pl-1">
-            {validation.warnings.map((warn, idx) => (
-              <li key={idx}>{warn}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+        )}
 
-      {/* Basic Inputs Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* States Input */}
-        <div>
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <label htmlFor="dfa-states" className="block text-xs font-semibold text-slate-300">
-              States Set (Q) <span className="text-slate-500 font-normal">(Comma/Space separated)</span>
-            </label>
-            <button
-              type="button"
-              onClick={addState}
-              className="inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add state
-            </button>
-          </div>
+        {/* Field 1: Enter States */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-[#543d2b] tracking-wide">
+            Enter States <span className="font-normal text-stone-500">(comma separated)</span>
+          </label>
           <input
-            id="dfa-states"
             type="text"
             value={statesInput}
             onChange={(e) => handleStatesChange(e.target.value)}
             placeholder="A, B, C, D, E"
-            className="w-full bg-slate-950 border border-slate-700 text-slate-100 text-sm font-mono rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            className="w-full px-3.5 py-2 text-sm font-mono font-medium rounded-xl bg-white border border-[#d6c19f] text-[#2b1f16] focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-700 transition-all duration-200 shadow-inner"
           />
-          <span className="text-[11px] text-slate-500 mt-1 block">
-            {dfa.states.length} state(s): [{dfa.states.join(', ')}]
-          </span>
         </div>
 
-        {/* Alphabet Input */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Input Alphabet (Σ) <span className="text-slate-500 font-normal">(Comma/Space separated)</span>
+        {/* Field 2: Start State */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-[#543d2b] tracking-wide">
+            Start State
           </label>
-          <input
-            type="text"
-            value={alphabetInput}
-            onChange={(e) => handleAlphabetChange(e.target.value)}
-            placeholder="0, 1"
-            className="w-full bg-slate-950 border border-slate-700 text-slate-100 text-sm font-mono rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-          />
-          <span className="text-[11px] text-slate-500 mt-1 block">
-            {dfa.alphabet.length} symbol(s): [{dfa.alphabet.join(', ')}]
-          </span>
-        </div>
-      </div>
-
-      {/* Start State & Final States Selectors */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-        {/* Start State Dropdown */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Start State (q₀)
-          </label>
-          <select
-            value={dfa.startState}
-            onChange={(e) => onChange({ ...dfa, startState: e.target.value })}
-            className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm font-mono rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-          >
-            {dfa.states.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Final States Multi-Select Badges */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Final / Accept States (F) <span className="text-slate-500 font-normal">(Click to toggle)</span>
-          </label>
-          <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-950 border border-slate-700 rounded-lg items-center">
-            {dfa.states.map(st => {
-              const isFinal = dfa.finalStates.includes(st);
-              return (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => toggleFinalState(st)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium transition border ${
-                    isFinal
-                      ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50 shadow-sm'
-                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  {isFinal ? `★ ${st}` : st}
-                </button>
-              );
-            })}
+          <div className="relative">
+            <select
+              value={dfa.startState}
+              onChange={(e) => onChange({ ...dfa, startState: e.target.value })}
+              className="w-full appearance-none px-3.5 py-2 text-sm font-mono font-semibold rounded-xl bg-white border border-[#d6c19f] text-[#2b1f16] focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-700 transition cursor-pointer pr-9 shadow-inner"
+            >
+              {dfa.states.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-stone-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
         </div>
+
+        {/* Field 3: End States (Accepting) */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-[#543d2b] tracking-wide">
+            End States <span className="font-normal text-stone-500">(Accepting)</span>
+          </label>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsFinalsDropdownOpen(!isFinalsDropdownOpen)}
+              className="w-full text-left px-3.5 py-2 text-sm font-mono rounded-xl bg-white border border-[#d6c19f] text-[#2b1f16] flex items-center justify-between shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all"
+            >
+              <div className="flex flex-wrap gap-1 items-center">
+                {dfa.finalStates.length === 0 ? (
+                  <span className="text-stone-400 font-sans text-xs">Select accepting states...</span>
+                ) : (
+                  dfa.finalStates.map((st) => (
+                    <span
+                      key={st}
+                      className="px-2 py-0.5 rounded-md text-xs font-bold font-mono bg-[#daf1e0] text-[#1c6b39] border border-[#228646]/40 flex items-center gap-1 transition-transform hover:scale-105"
+                    >
+                      {st}
+                    </span>
+                  ))
+                )}
+              </div>
+              <ChevronDown className={`w-4 h-4 text-stone-500 transition-transform duration-200 ${isFinalsDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isFinalsDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1.5 p-2 bg-white rounded-xl border border-[#d6c19f] shadow-2xl z-30 max-h-48 overflow-y-auto space-y-1 animate-pop-in">
+                {dfa.states.map((st) => {
+                  const isChecked = dfa.finalStates.includes(st);
+                  return (
+                    <div
+                      key={st}
+                      onClick={() => toggleFinalState(st)}
+                      className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono font-medium cursor-pointer transition ${
+                        isChecked ? 'bg-[#edf7ef] text-[#1a5b32]' : 'hover:bg-amber-50 text-stone-700'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${
+                          isChecked ? 'bg-[#daf1e0] border-[#228646] text-[#1c6b39]' : 'bg-[#e9edf5] border-[#cbd5e1] text-stone-600'
+                        }`}>
+                          {st}
+                        </span>
+                        State {st}
+                      </span>
+                      {isChecked && <Check className="w-4 h-4 text-[#228646]" />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Transition Table Quick Link */}
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={onOpenTransitionEditor}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold text-[#483321] hover:text-[#20140a] bg-[#f2e5d0] hover:bg-[#ebd9bf] border border-[#dbcaa9] rounded-xl transition-all duration-200 shadow-sm hover:scale-[1.02] active:scale-[0.98] group"
+          >
+            <Table className="w-3.5 h-3.5 text-amber-800 group-hover:rotate-6 transition-transform" />
+            <span>Edit Transition Rules δ(q, a)</span>
+          </button>
+        </div>
+
+        {/* Action Button: Minimize DFA (With Shimmer Light Beam Effect) */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={onMinimizeClick}
+            disabled={!validation.isValid}
+            className="w-full py-2.5 px-4 rounded-xl text-white font-semibold text-sm bg-[#252d4a] hover:bg-[#1b223a] active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed group"
+            style={{
+              boxShadow: '0 4px 14px rgba(37, 45, 74, 0.4)',
+            }}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300 group-hover:scale-110 transition-transform" />
+            <span className="tracking-wide">Minimize DFA →</span>
+          </button>
+        </div>
       </div>
 
-      {/* Dynamic Transition Table */}
-      <div className="pt-2">
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-semibold text-slate-300">
-            Transition Function Table δ(State, Symbol) → Target State
-          </label>
-          <span className="text-[11px] text-indigo-400 font-mono">
-            {dfa.states.length} × {dfa.alphabet.length} matrix
-          </span>
+      {/* Tip Callout Banner at Bottom */}
+      <div className="mt-5 p-3 rounded-xl bg-[#fff8e7] border border-[#f5dfa8] flex items-start gap-2.5 shadow-sm transition-transform hover:scale-[1.01]">
+        <div className="p-1 rounded-md bg-amber-200/70 text-amber-900 shrink-0 animate-pulse">
+          <Lightbulb className="w-4 h-4 text-amber-800" />
         </div>
-
-        <div className="overflow-x-auto border border-slate-800 rounded-lg">
-          <table className="w-full text-xs text-left text-slate-300">
-            <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
-              <tr>
-                <th className="px-4 py-2.5 w-32 border-r border-slate-800">State (q)</th>
-                {dfa.alphabet.map(sym => (
-                  <th key={sym} className="px-4 py-2.5 font-mono text-center border-r border-slate-800">
-                    Symbol '{sym}'
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80 bg-slate-900/60">
-              {dfa.states.map(state => {
-                const isStart = state === dfa.startState;
-                const isFinal = dfa.finalStates.includes(state);
-
-                return (
-                  <tr key={state} className="hover:bg-slate-800/40">
-                    <td className="px-4 py-2 font-mono font-medium border-r border-slate-800 flex items-center space-x-1.5">
-                      <span className="text-indigo-400">{isStart ? '➔ ' : ''}</span>
-                      <span className={isFinal ? 'text-emerald-400 font-bold' : 'text-slate-200'}>
-                        {state}
-                      </span>
-                      {isFinal && <span className="text-emerald-400 text-[10px]">★</span>}
-                    </td>
-
-                    {dfa.alphabet.map(symbol => {
-                      const targetValue = dfa.transitions[state]?.[symbol] || '';
-                      return (
-                        <td key={symbol} className="px-3 py-1.5 border-r border-slate-800 text-center">
-                          <select
-                            value={targetValue}
-                            onChange={(e) => handleTransitionChange(state, symbol, e.target.value)}
-                            className="bg-slate-950 border border-slate-700 text-slate-200 text-xs font-mono rounded px-2 py-1 focus:ring-1 focus:ring-indigo-500 focus:outline-none w-full text-center"
-                          >
-                            {dfa.states.map(targetState => (
-                              <option key={targetState} value={targetState}>
-                                {targetState}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <p className="text-xs text-[#5c4323] leading-relaxed">
+          <strong className="text-[#3b2713]">Tip:</strong> Enter the states and let the magic happen!
+        </p>
       </div>
     </div>
   );
