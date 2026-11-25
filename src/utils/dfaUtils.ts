@@ -168,7 +168,7 @@ export function minimizeDFA(dfa: DFA): MinimizationResult {
     stepNumber: 0,
     title: "1. Reachability Analysis",
     description: unreachable.length > 0
-      ? `Found ${unreachable.length} unreachable state(s): [${unreachable.join(', ')}]. These will be removed before partition refinement.`
+      ? `Found ${unreachable.length} unreachable state(s): [${unreachable.join(', ')}]. They will be omitted unless equivalent to a reachable state.`
       : "All states are reachable from the start state.",
     type: "reachability",
     reachableStates: reachable,
@@ -195,17 +195,17 @@ export function minimizeDFA(dfa: DFA): MinimizationResult {
   }
 
   // Step 1: Initial Partition (P0)
-  // Split reachable states into Final states (F) and Non-Final states (Q \ F)
-  const reachableFinal = reachable.filter(s => dfa.finalStates.includes(s));
-  const reachableNonFinal = reachable.filter(s => !dfa.finalStates.includes(s));
+  // Refine all states so unreachable states equivalent to reachable states can share their class.
+  const finalStatesInInput = dfa.states.filter(s => dfa.finalStates.includes(s));
+  const nonFinalStatesInInput = dfa.states.filter(s => !dfa.finalStates.includes(s));
 
   let currentPartitions: string[][] = [];
-  if (reachableFinal.length > 0 && reachableNonFinal.length > 0) {
-    currentPartitions = [reachableNonFinal, reachableFinal];
-  } else if (reachableFinal.length > 0) {
-    currentPartitions = [reachableFinal];
+  if (finalStatesInInput.length > 0 && nonFinalStatesInInput.length > 0) {
+    currentPartitions = [nonFinalStatesInInput, finalStatesInInput];
+  } else if (finalStatesInInput.length > 0) {
+    currentPartitions = [finalStatesInInput];
   } else {
-    currentPartitions = [reachableNonFinal];
+    currentPartitions = [nonFinalStatesInInput];
   }
 
   steps.push({
@@ -238,17 +238,17 @@ export function minimizeDFA(dfa: DFA): MinimizationResult {
       for (const state of group) {
         const targetStates: Record<string, string> = {};
         const targetGroupIndices: Record<string, number> = {};
-        const sigParts: string[] = [];
+        const targetGroupSignature: number[] = [];
 
         for (const symbol of dfa.alphabet) {
           const target = dfa.transitions[state][symbol];
           targetStates[symbol] = target;
           const targetGrp = getGroupIndex(target, currentPartitions);
           targetGroupIndices[symbol] = targetGrp;
-          sigParts.push(`${symbol}→P${targetGrp}`);
+          targetGroupSignature.push(targetGrp);
         }
 
-        const signatureKey = sigParts.join(', ');
+        const signatureKey = JSON.stringify(targetGroupSignature);
         const sig: StateSignature = {
           state,
           targetStates,
@@ -284,16 +284,17 @@ export function minimizeDFA(dfa: DFA): MinimizationResult {
 
     if (!partitionChanged) {
       isStable = true;
+      currentPartitions = currentPartitions.filter(group =>
+        group.some(state => reachable.includes(state))
+      );
       steps.push({
         stepNumber: stepCounter,
         title: `Partition Refinement Round (Stable Result)`,
-        description: `No groups were split during this round. The partition has reached a stable equilibrium!`,
+        description: `No groups were split during this round. Unreachable-only groups are omitted; unreachable states equivalent to reachable states remain in their shared class.`,
         type: "completed",
         reachableStates: reachable,
         unreachableStates: unreachable,
         partitions: currentPartitions.map(g => [...g]),
-        signatures: allSignatures,
-        splitDetails,
         isStable: true
       });
     } else {
@@ -317,11 +318,14 @@ export function minimizeDFA(dfa: DFA): MinimizationResult {
   // Construct Minimized DFA from final stable partition
   const finalPartitions = currentPartitions;
   const stateMapping: Record<string, string> = {};
-  const minStates: string[] = [];
+  const formattedLabels = finalPartitions.map(formatGroupLabel);
+  const labelsAreUnique = new Set(formattedLabels).size === formattedLabels.length;
+  const minStates = labelsAreUnique
+    ? formattedLabels
+    : finalPartitions.map((_, index) => `M${index}`);
 
-  finalPartitions.forEach((group) => {
-    const label = formatGroupLabel(group);
-    minStates.push(label);
+  finalPartitions.forEach((group, index) => {
+    const label = minStates[index];
     group.forEach(st => {
       stateMapping[st] = label;
     });
@@ -331,18 +335,15 @@ export function minimizeDFA(dfa: DFA): MinimizationResult {
   const minStartState = stateMapping[dfa.startState] || minStates[0];
 
   // Minimized Final States
-  const minFinalStates = minStates.filter(minSt => {
-    // Find representative original state in this group
-    const origGroup = finalPartitions.find(g => formatGroupLabel(g) === minSt);
-    if (!origGroup) return false;
-    return origGroup.some(st => dfa.finalStates.includes(st));
-  });
+  const minFinalStates = finalPartitions.flatMap((group, index) =>
+    group.some(st => dfa.finalStates.includes(st)) ? [minStates[index]] : []
+  );
 
   // Minimized Transitions
   const minTransitions: Record<string, Record<string, string>> = {};
 
-  finalPartitions.forEach(group => {
-    const minStLabel = formatGroupLabel(group);
+  finalPartitions.forEach((group, index) => {
+    const minStLabel = minStates[index];
     const repState = group[0]; // Any state in equivalence class gives same transition behavior
     minTransitions[minStLabel] = {};
 
@@ -501,6 +502,29 @@ export const PRESET_DFAS: PresetTestCase[] = [
     }
   },
   {
+    id: "textbook-example-part-2",
+    name: "Textbook Example (Part 2)",
+    description: "Eight-state DFA from a textbook example. Unreachable q3 is equivalent to reachable q5, so both appear in the same minimized class.",
+    expectedStateCount: 5,
+    sampleStrings: ["0", "1", "00", "10", "011", "101"],
+    dfa: {
+      states: ["q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7"],
+      alphabet: ["0", "1"],
+      startState: "q0",
+      finalStates: ["q2"],
+      transitions: {
+        q0: { "0": "q1", "1": "q5" },
+        q1: { "0": "q6", "1": "q2" },
+        q2: { "0": "q0", "1": "q2" },
+        q3: { "0": "q2", "1": "q6" },
+        q4: { "0": "q7", "1": "q5" },
+        q5: { "0": "q2", "1": "q6" },
+        q6: { "0": "q6", "1": "q4" },
+        q7: { "0": "q6", "1": "q2" }
+      }
+    }
+  },
+  {
     id: "already-minimal",
     name: "Already-Minimal DFA",
     description: "A 3-state DFA accepting strings ending with '1'. Cannot be minimized further.",
@@ -572,9 +596,9 @@ export const PRESET_DFAS: PresetTestCase[] = [
   },
   {
     id: "complex-equivalence",
-    name: "Complex Equivalent States (6 States → 3)",
-    description: "Classic textbook DFA with 6 states (q0 to q5) reducing to 3 equivalent state groups.",
-    expectedStateCount: 3,
+    name: "Complex Equivalent States (6 States → 4)",
+    description: "Classic textbook DFA with 6 states (q0 to q5) reducing to 4 equivalent state groups.",
+    expectedStateCount: 4,
     sampleStrings: ["a", "b", "ab", "ba", "aab", "bba"],
     dfa: {
       states: ["q0", "q1", "q2", "q3", "q4", "q5"],

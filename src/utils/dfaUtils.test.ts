@@ -50,6 +50,21 @@ assert(
   'Unreachable DFA State Reduction (Expected 3 states remaining)',
   `Got ${unreachMinResult.minimizedDFA.states.length}`
 );
+assert(
+  !('F' in unreachMinResult.stateMapping) && !('G' in unreachMinResult.stateMapping),
+  'Unreachable States Without Reachable Equivalents Are Omitted'
+);
+
+// The textbook example retains q3 in q5's reachable equivalence class.
+const textbookPreset = PRESET_DFAS.find(p => p.id === 'textbook-example-part-2')!;
+const textbookResult = minimizeDFA(textbookPreset.dfa);
+const textbookGroups = textbookResult.steps[textbookResult.steps.length - 1].partitions;
+assert(
+  textbookGroups.some(group => group.includes('q3') && group.includes('q5'))
+    && textbookResult.unreachableStates.includes('q3')
+    && textbookResult.minimizedDFA.states.length === 5,
+  'Textbook Example Groups Unreachable q3 With Equivalent Reachable q5'
+);
 
 // 3. Test Already Minimal DFA
 const minimalPreset = PRESET_DFAS.find(p => p.id === 'already-minimal')!;
@@ -87,7 +102,43 @@ assert(
   `Got ${allFinalResult.minimizedDFA.states.length}`
 );
 
-// 7. Test Input Validation for Broken DFAs
+// Group labels must remain unique even when an input state resembles a group label.
+const collidingLabelsDFA = {
+  states: ['A', 'B', '{A, B}'],
+  alphabet: ['x', 'y'],
+  startState: 'A',
+  finalStates: ['{A, B}'],
+  transitions: {
+    A: { x: 'B', y: '{A, B}' },
+    B: { x: 'A', y: '{A, B}' },
+    '{A, B}': { x: '{A, B}', y: '{A, B}' }
+  }
+};
+const collidingLabelsResult = minimizeDFA(collidingLabelsDFA);
+assert(
+  collidingLabelsResult.minimizedDFA.states.length === 2
+    && new Set(collidingLabelsResult.minimizedDFA.states).size === 2
+    && collidingLabelsResult.minimizedDFA.finalStates.length === 1,
+  'Minimized State Labels Remain Unique When Input Names Collide'
+);
+assert(
+  compareDFAs(collidingLabelsDFA, collidingLabelsResult.minimizedDFA, ['', 'x', 'xx', 'y', 'xy', 'yx']).every(item => item.match),
+  'Minimized DFA Preserves Language With Colliding Group Labels'
+);
+
+// Verify the documented state counts and sample language for every bundled preset.
+for (const preset of PRESET_DFAS) {
+  const result = minimizeDFA(preset.dfa);
+  const hasExpectedCount = result.minimizedDFA.states.length === preset.expectedStateCount;
+  const preservesSamples = compareDFAs(preset.dfa, result.minimizedDFA, preset.sampleStrings).every(item => item.match);
+  assert(
+    hasExpectedCount && preservesSamples,
+    `Preset "${preset.id}" Has Correct Minimized State Count and Language`,
+    `Got ${result.minimizedDFA.states.length} state(s), expected ${preset.expectedStateCount}`
+  );
+}
+
+// Test Input Validation for Broken DFAs
 const invalidDFA = {
   states: ['A', 'B'],
   alphabet: ['0', '1'],
